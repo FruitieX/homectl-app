@@ -1,15 +1,16 @@
 #![allow(unused_unsafe)]
 
-use std::rc::Rc;
+use std::{rc::Rc};
 
+use fetch::use_fetch;
 use yew::prelude::*;
-use yew_functional::{function_component, use_effect_with_deps, use_ref, use_state};
+use yew_functional::{function_component, use_state};
 
 use serde::Deserialize;
-use yew::format::{Json, Nothing};
 use yew_material::{MatList, MatListItem};
-use yew_services::fetch::{FetchService, Method, Request, Response};
+use yew_services::fetch::Method;
 
+mod fetch;
 mod log;
 
 #[derive(Properties, Clone, PartialEq)]
@@ -36,63 +37,10 @@ struct DevicesResponse {
     devices: Vec<Device>,
 }
 
-const BASE_URI: &str = "http://localhost:45289";
-
-fn use_fetch<T: 'static>(method: Method, endpoint: &str) -> Rc<T>
-where
-    T: for<'a> Deserialize<'a> + Default,
-{
-    let (state, set_state) = use_state(T::default);
-
-    let fetch_task = use_ref(|| None);
-
-    let uri = format!("{}{}", BASE_URI, endpoint);
-
-    use_effect_with_deps(
-        move |_| {
-            let request = Request::builder()
-                .method(method)
-                .uri(uri)
-                .body(Nothing)
-                .expect("Could not build request.");
-
-            let request_callback =
-                Callback::from(move |response: Response<Json<Result<T, anyhow::Error>>>| {
-                    let Json(data) = response.into_body();
-
-                    match data {
-                        Ok(data) => set_state(data),
-                        Err(e) => {
-                            log!("Fetch error: {:?}", e);
-                        }
-                    }
-                });
-
-            let task =
-                FetchService::fetch(request, request_callback).expect("Failed to start request");
-
-            // Store the task so it isn't canceled immediately
-            {
-                let mut fetch_task = fetch_task.borrow_mut();
-                *fetch_task = Some(task);
-            };
-
-            move || {
-                fetch_task.take();
-            }
-        },
-        (),
-    );
-
-    state
-}
-
 fn fetch_devices() -> Rc<Vec<Device>> {
-    let devices = use_fetch::<DevicesResponse>(Method::GET, "/devices")
-        .devices
-        .clone();
+    let response: Rc<DevicesResponse> = use_fetch(Method::GET, "/devices", None::<()>, None);
 
-    Rc::new(devices)
+    Rc::new(response.devices.clone())
 }
 
 #[function_component(App)]
